@@ -65,7 +65,7 @@ enable_custom_partitioning = true
 
 # Partitioning modes:
 #   standard      - Full nvme0n1 for OS, nvme1-3 for Ceph OSDs (9 OSDs total)
-#   ceph_only     - 50GB root + all 4 NVMe for OSDs (12 OSDs total)
+
 partitioning_mode = "standard"
 
 # =============================================================================
@@ -87,7 +87,7 @@ generate_env_file  = true
 # Network Auto-Configuration
 # =============================================================================
 
-# Automatically configure Private Network VLANs after server installation
+# Automatically configure Private Network VLANs on Proxmox after server installation
 # Requires sshpass to be installed locally for initial SSH setup
 enable_network_config = true
 
