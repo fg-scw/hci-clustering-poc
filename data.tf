@@ -36,16 +36,13 @@ output "server_offer_details" {
   description = "Details of selected server offer"
   value = {
     name             = data.scaleway_baremetal_offer.selected.name
-    offer_id         = data.scaleway_baremetal_offer.selected.offer_id
     commercial_range = data.scaleway_baremetal_offer.selected.commercial_range
     cpu = {
       name       = data.scaleway_baremetal_offer.selected.cpu[0].name
       core_count = data.scaleway_baremetal_offer.selected.cpu[0].core_count
-      frequency  = data.scaleway_baremetal_offer.selected.cpu[0].frequency
     }
     memory = {
       capacity = data.scaleway_baremetal_offer.selected.memory[0].capacity
-      type     = data.scaleway_baremetal_offer.selected.memory[0].type
     }
     disks = [for d in data.scaleway_baremetal_offer.selected.disk : {
       capacity = d.capacity
