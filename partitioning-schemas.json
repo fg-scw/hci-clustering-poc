@@ -1,0 +1,123 @@
+{
+  "_comment": "Scaleway Elastic Metal Advanced Partitioning Schemas for EM-L220E-NVME",
+  "_documentation": "https://www.scaleway.com/en/developers/api/elastic-metal/#path-partitioning-schemas-get-default-partitioning-schema",
+  "_valid_labels": ["uefi", "legacy", "root", "boot", "swap", "data", "home", "raid", "zfs"],
+  
+  "standard": {
+    "_description": "OS on nvme0n1 only, nvme1-3 completely free for Ceph OSDs (no partitions)",
+    "disks": [
+      {
+        "device": "/dev/nvme0n1",
+        "partitions": [
+          {
+            "label": "uefi",
+            "number": 1,
+            "size": 536870912,
+            "use_all_available_space": false
+          },
+          {
+            "label": "boot",
+            "number": 2,
+            "size": 1073741824,
+            "use_all_available_space": false
+          },
+          {
+            "label": "swap",
+            "number": 3,
+            "size": 17179869184,
+            "use_all_available_space": false
+          },
+          {
+            "label": "root",
+            "number": 4,
+            "size": 0,
+            "use_all_available_space": true
+          }
+        ]
+      }
+    ],
+    "raids": [],
+    "filesystems": [
+      {
+        "device": "/dev/nvme0n1p1",
+        "format": "fat32",
+        "mountpoint": "/boot/efi"
+      },
+      {
+        "device": "/dev/nvme0n1p2",
+        "format": "ext4",
+        "mountpoint": "/boot"
+      },
+      {
+        "device": "/dev/nvme0n1p4",
+        "format": "ext4",
+        "mountpoint": "/"
+      }
+    ],
+    "zfs": {
+      "pools": []
+    }
+  },
+
+  "ceph_only": {
+    "_description": "Minimal OS (50GB), all remaining space on all NVMe for Ceph OSDs",
+    "disks": [
+      {
+        "device": "/dev/nvme0n1",
+        "partitions": [
+          {
+            "label": "uefi",
+            "number": 1,
+            "size": 536870912,
+            "use_all_available_space": false
+          },
+          {
+            "label": "boot",
+            "number": 2,
+            "size": 1073741824,
+            "use_all_available_space": false
+          },
+          {
+            "label": "swap",
+            "number": 3,
+            "size": 8589934592,
+            "use_all_available_space": false
+          },
+          {
+            "label": "root",
+            "number": 4,
+            "size": 53687091200,
+            "use_all_available_space": false
+          },
+          {
+            "label": "data",
+            "number": 5,
+            "size": 0,
+            "use_all_available_space": true
+          }
+        ]
+      }
+    ],
+    "raids": [],
+    "filesystems": [
+      {
+        "device": "/dev/nvme0n1p1",
+        "format": "fat32",
+        "mountpoint": "/boot/efi"
+      },
+      {
+        "device": "/dev/nvme0n1p2",
+        "format": "ext4",
+        "mountpoint": "/boot"
+      },
+      {
+        "device": "/dev/nvme0n1p4",
+        "format": "ext4",
+        "mountpoint": "/"
+      }
+    ],
+    "zfs": {
+      "pools": []
+    }
+  }
+}
