@@ -104,10 +104,6 @@ resource "scaleway_baremetal_server" "nodes" {
     create = "45m"
     delete = "15m"
   }
-
-  lifecycle {
-    # Prevent accidental destruction
-    # prevent_destroy = true
     
     ignore_changes = [
       # Ignore changes to SSH keys after creation
@@ -117,7 +113,7 @@ resource "scaleway_baremetal_server" "nodes" {
 }
 
 # =============================================================================
-# QDevice Instance (Optional)
+# QDevice Instance 
 # =============================================================================
 
 resource "scaleway_instance_server" "qdevice" {

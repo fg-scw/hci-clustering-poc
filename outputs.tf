@@ -1,6 +1,5 @@
 ################################################################################
 # Terraform Outputs
-# Useful information after provisioning
 ################################################################################
 
 # =============================================================================
@@ -142,44 +141,9 @@ output "next_steps" {
   value       = <<-EOT
 
     ============================================================
-    Proxmox Ceph HCI Cluster Deployed!
+    Proxmox Cluster Deployed!
     ============================================================
 
-    Servers are installing with custom partitioning. This takes 10-15 minutes.
-    
-    Monitor progress:
-      scw baremetal server list zone=${var.zone}
-
-    Once status is 'ready':
-
-    1. Setup SSH access (run once after servers are ready):
-       ./setup-ssh.sh
-
-    2. Re-run terraform to configure network:
-       terraform apply
-
-    3. Run deployment scripts:
-       cd ..
-       cp .env.generated .env
-       
-       # On each node:
-       ./scripts/proxmox/01-initial-setup.sh
-       
-       # On first node only:
-       ./scripts/proxmox/02-create-cluster.sh
-       
-       # On other nodes:
-       ./scripts/proxmox/02-create-cluster.sh
-       
-       # On first node:
-       ./scripts/proxmox/03-install-ceph.sh
-
-    4. Access Proxmox Web UI:
-       terraform output proxmox_urls
-       Username: root
-       Password: (from terraform.tfvars service_password)
-
-    ============================================================
   EOT
 }
 

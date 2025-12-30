@@ -64,11 +64,7 @@ variable "server_type" {
   validation {
     condition = contains([
       "EM-L220E-NVME",  # Lithium: 8C AMD EPYC, 64GB, 4x1.92TB NVMe
-      "EM-A315X-SSD",   # Aluminium: 8C, 64GB, 2x1TB SSD
-      "EM-A410X-SSD",   # Aluminium: 16C, 128GB, 2x1TB SSD
-      "EM-B111X-SATA",  # Beryllium: Entry level
-      "EM-B211X-SATA",  # Beryllium: Mid range
-      "EM-B311X-SATA",  # Beryllium: High capacity
+      "EM-L420E-NVME",  # Lithium: 12C AMD EPYC, 128GB, 4x3.84TB NVMe
     ], var.server_type)
     error_message = "Invalid server type. Check Scaleway documentation for available types."
   }
@@ -153,7 +149,7 @@ variable "swap_size_gb" {
 }
 
 # =============================================================================
-# QDevice Configuration (Optional)
+# QDevice Configuration
 # =============================================================================
 
 variable "enable_qdevice" {
