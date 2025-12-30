@@ -1,6 +1,5 @@
 {
   "_comment": "Scaleway Elastic Metal Advanced Partitioning Schemas for EM-L220E-NVME",
-  "_documentation": "https://www.scaleway.com/en/developers/api/elastic-metal/#path-partitioning-schemas-get-default-partitioning-schema",
   "_valid_labels": ["uefi", "legacy", "root", "boot", "swap", "data", "home", "raid", "zfs"],
   
   "standard": {
