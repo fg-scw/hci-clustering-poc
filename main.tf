@@ -79,8 +79,7 @@ resource "scaleway_baremetal_server" "nodes" {
   tags        = concat(local.common_tags, ["node:${count.index + 1}"])
 
   # Custom partitioning - uses JSON schema directly
-  # This installs the OS with our custom partition layout
-  partitioning = var.enable_custom_partitioning ? jsonencode(local.selected_schema) : null
+   partitioning = var.enable_custom_partitioning ? jsonencode(local.selected_schema) : null
 
   # Service password for Proxmox web UI (root user)
   service_password = var.service_password
