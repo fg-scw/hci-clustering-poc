@@ -1,0 +1,108 @@
+---
+# =============================================================================
+# Proxmox Cluster Configuration
+# =============================================================================
+pve_group: proxmox
+pve_cluster_enabled: true
+pve_cluster_clustername: proxmox-hci
+
+# Reboot on kernel update (first run only)
+pve_reboot_on_kernel_update: false
+pve_reboot_on_kernel_update_delay: 60
+
+# Repository (no-subscription for community)
+pve_repository_line: "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription"
+pve_remove_subscription_warning: true
+
+# Extra packages
+pve_extra_packages:
+  - ifupdown2
+  - vim
+  - htop
+  - iotop
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+# Public network (Ceph MON, client traffic)
+public_network: "172.16.28.0/22"
+public_vlan: 3012
+
+# Cluster network (Ceph OSD replication)  
+cluster_network: "172.16.36.0/22"
+cluster_vlan: 3656
+
+# =============================================================================
+# Ceph Configuration
+# =============================================================================
+pve_ceph_enabled: true
+pve_ceph_repository_line: "deb http://download.proxmox.com/debian/ceph-reef bookworm main"
+
+# Networks
+pve_ceph_network: "{{ public_network }}"
+pve_ceph_cluster_network: "{{ cluster_network }}"
+
+# All nodes run all Ceph services
+pve_ceph_nodes: "{{ pve_group }}"
+pve_ceph_mon_group: "{{ pve_group }}"
+pve_ceph_mgr_group: "{{ pve_group }}"
+pve_ceph_mds_group: "{{ pve_group }}"
+
+# OSD Configuration - dynamically built from host vars
+pve_ceph_osds: "{{ ceph_osd_devices | default([]) | map('community.general.dict_kv', 'device') | list }}"
+
+# Ceph Pools
+pve_ceph_pools:
+  - name: ceph-pool
+    pgs: 128
+    rule: replicated_rule
+    application: rbd
+    storage: true
+    size: 3
+    min_size: 2
+
+# CephFS (optional)
+pve_ceph_fs:
+  - name: cephfs
+    pgs: 64
+    rule: replicated_rule
+    storage: true
+    mountpoint: /mnt/cephfs
+
+# =============================================================================
+# Storage Configuration
+# =============================================================================
+pve_storages:
+  - name: local
+    type: dir
+    content: ["iso", "backup", "vztmpl"]
+    path: /var/lib/vz
+  - name: local-lvm
+    type: lvmthin
+    content: ["images", "rootdir"]
+    vgname: pve
+    thinpool: data
+
+# =============================================================================
+# Users and ACLs (optional)
+# =============================================================================
+pve_groups:
+  - name: admins
+    comment: "Cluster Administrators"
+
+pve_users:
+  - name: root@pam
+    email: admin@example.com
+
+pve_acls:
+  - path: /
+    roles: ["Administrator"]
+    groups: ["admins"]
+
+# =============================================================================
+# Datacenter Configuration
+# =============================================================================
+pve_datacenter_cfg:
+  keyboard: fr
+  console: html5
+  migration_type: secure

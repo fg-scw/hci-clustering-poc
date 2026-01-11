@@ -1,0 +1,22 @@
+{
+  "standard": {
+    "disks": [
+      {
+        "device": "/dev/nvme0n1",
+        "partitions": [
+          { "label": "uefi", "number": 1, "size": 536870912 },
+          { "label": "boot", "number": 2, "size": 1073741824 },
+          { "label": "swap", "number": 3, "size": 17179869184 },
+          { "label": "root", "number": 4, "size": 0, "use_all_available_space": true }
+        ]
+      }
+    ],
+    "raids": [],
+    "filesystems": [
+      { "device": "/dev/nvme0n1p1", "format": "fat32", "mountpoint": "/boot/efi" },
+      { "device": "/dev/nvme0n1p2", "format": "ext4", "mountpoint": "/boot" },
+      { "device": "/dev/nvme0n1p4", "format": "ext4", "mountpoint": "/" }
+    ],
+    "zfs": { "pools": [] }
+  }
+}

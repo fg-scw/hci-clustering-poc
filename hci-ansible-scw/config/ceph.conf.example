@@ -1,0 +1,105 @@
+# Ceph Configuration Example
+# /etc/ceph/ceph.conf
+#
+# This is a reference configuration for Proxmox Ceph HCI cluster
+# Actual values are generated during pveceph init
+
+[global]
+# Cluster identification
+fsid = <generated-uuid>
+cluster = ceph
+
+# Authentication
+auth_cluster_required = cephx
+auth_service_required = cephx
+auth_client_required = cephx
+
+# Network configuration
+# Public network: Client traffic, MON communication
+public_network = 172.16.28.0/22
+
+# Cluster network: OSD replication, recovery
+cluster_network = 172.16.36.0/22
+
+# Monitor configuration
+mon_initial_members = pve1, pve2, pve3
+mon_host = 172.16.28.2, 172.16.28.3, 172.16.28.4
+
+# Logging
+log_to_syslog = false
+log_file = /var/log/ceph/$cluster-$name.log
+
+# =============================================================================
+# OSD Configuration
+# =============================================================================
+[osd]
+# BlueStore (default for new installations)
+osd_objectstore = bluestore
+
+# Performance tuning
+osd_max_write_size = 512
+osd_client_message_size_cap = 524288000
+osd_deep_scrub_stride = 1048576
+osd_op_threads = 8
+osd_disk_threads = 4
+
+# Recovery tuning (balance between speed and cluster performance)
+osd_recovery_max_active = 3
+osd_max_backfills = 1
+osd_recovery_op_priority = 3
+
+# Scrubbing schedule (off-peak hours)
+osd_scrub_begin_hour = 2
+osd_scrub_end_hour = 6
+osd_scrub_load_threshold = 0.5
+
+# Memory allocation
+osd_memory_target = 4294967296  # 4 GB per OSD
+
+# BlueStore cache
+bluestore_cache_size = 3221225472  # 3 GB
+bluestore_cache_size_hdd = 1073741824  # 1 GB for HDD (not used here)
+bluestore_cache_size_ssd = 3221225472  # 3 GB for SSD
+
+# =============================================================================
+# Client Configuration (RBD)
+# =============================================================================
+[client]
+# RBD caching
+rbd_cache = true
+rbd_cache_size = 67108864  # 64 MB
+rbd_cache_max_dirty = 50331648  # 48 MB
+rbd_cache_target_dirty = 33554432  # 32 MB
+rbd_cache_max_dirty_age = 1
+rbd_cache_writethrough_until_flush = true
+
+# Concurrent operations
+rbd_concurrent_management_ops = 20
+
+# =============================================================================
+# Monitor Configuration
+# =============================================================================
+[mon]
+# Election settings
+mon_election_timeout = 5
+mon_lease = 5
+
+# Data compaction
+mon_compact_on_start = true
+
+# Clock drift tolerance (seconds)
+mon_clock_drift_allowed = 0.5
+
+# =============================================================================
+# Manager Configuration
+# =============================================================================
+[mgr]
+# Dashboard module
+mgr_modules = dashboard
+
+# =============================================================================
+# Per-Host Overrides (Optional)
+# =============================================================================
+# Example: Different tuning for specific hosts
+# [osd.0]
+# osd_memory_target = 6442450944  # 6 GB for larger OSD

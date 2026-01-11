@@ -1,0 +1,45 @@
+---
+# =============================================================================
+# Ceph Storage Setup
+# Install and configure Ceph on the Proxmox cluster
+# =============================================================================
+- name: Configure Ceph Storage
+  hosts: proxmox
+  become: true
+  gather_facts: true
+  
+  pre_tasks:
+    - name: Verify cluster is formed
+      ansible.builtin.command: pvecm status
+      register: cluster_status
+      changed_when: false
+      failed_when: "'Cluster information' not in cluster_status.stdout"
+
+    - name: Build OSD list from host variables
+      ansible.builtin.set_fact:
+        pve_ceph_osds: "{{ ceph_osd_devices | map('community.general.dict_kv', 'device') | list }}"
+
+  roles:
+    - role: lae.proxmox
+      vars:
+        pve_group: proxmox
+        pve_cluster_enabled: true
+        pve_ceph_enabled: true
+        pve_ceph_repository_line: "{{ pve_ceph_repository_line }}"
+        pve_ceph_network: "{{ public_network }}"
+        pve_ceph_cluster_network: "{{ cluster_network }}"
+        pve_ceph_osds: "{{ pve_ceph_osds }}"
+        pve_ceph_pools: "{{ pve_ceph_pools }}"
+        pve_ceph_fs: "{{ pve_ceph_fs | default([]) }}"
+
+  post_tasks:
+    - name: Verify Ceph health
+      ansible.builtin.command: ceph health
+      register: ceph_health
+      changed_when: false
+      when: inventory_hostname == groups['proxmox'][0]
+
+    - name: Display Ceph status
+      ansible.builtin.debug:
+        msg: "Ceph Status: {{ ceph_health.stdout }}"
+      when: inventory_hostname == groups['proxmox'][0]

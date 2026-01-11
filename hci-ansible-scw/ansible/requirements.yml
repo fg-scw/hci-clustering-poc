@@ -1,0 +1,10 @@
+---
+roles:
+  - name: lae.proxmox
+    version: v1.10.0
+  - name: geerlingguy.ntp
+
+collections:
+  - name: community.general
+  - name: ansible.posix
+  - name: ansible.utils
