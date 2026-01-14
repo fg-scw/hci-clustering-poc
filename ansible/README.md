@@ -5,6 +5,7 @@ Configuration automatisée du cluster Proxmox + Ceph via Ansible.
 ## Prérequis
 
 ```bash
+brew install ansible netaddr
 pip install ansible jmespath netaddr
 ansible-galaxy install -r requirements.yml
 ```

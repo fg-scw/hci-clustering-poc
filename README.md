@@ -6,27 +6,27 @@ Déploiement automatisé d'un cluster hyperconvergé Proxmox + Ceph sur Scaleway
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                           Scaleway VPC                                │
+│                           Scaleway VPC                               │
 ├─────────────────────────────┬────────────────────────────────────────┤
 │   Public Network (vmbr1)    │      Cluster Network (vmbr2)           │
 │   172.16.28.0/22            │      172.16.36.0/22                    │
 │   Ceph MON, VM traffic      │      Ceph OSD Replication              │
 ├─────────────────────────────┴────────────────────────────────────────┤
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐              │
-│  │    pve1     │    │    pve2     │    │    pve3     │              │
-│  │  VLAN 1991  │    │  VLAN 1991  │    │  VLAN 1991  │  ← Public    │
-│  │  VLAN 2128  │    │  VLAN 2128  │    │  VLAN 3358  │  ← Cluster   │
-│  │   Proxmox   │    │   Proxmox   │    │   Proxmox   │              │
-│  │  Ceph MON   │    │  Ceph MON   │    │  Ceph MON   │              │
-│  │  Ceph OSD   │    │  Ceph OSD   │    │  Ceph OSD   │              │
-│  └─────────────┘    └─────────────┘    └─────────────┘              │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐               │
+│  │    pve1     │    │    pve2     │    │    pve3     │               │
+│  │  VLAN 1991  │    │  VLAN 1991  │    │  VLAN 1991  │  ← Public     │
+│  │  VLAN 2128  │    │  VLAN 2128  │    │  VLAN 3358  │  ← Cluster    │
+│  │   Proxmox   │    │   Proxmox   │    │   Proxmox   │               │
+│  │  Ceph MON   │    │  Ceph MON   │    │  Ceph MON   │               │
+│  │  Ceph OSD   │    │  Ceph OSD   │    │  Ceph OSD   │               │
+│  └─────────────┘    └─────────────┘    └─────────────┘               │
 │       Rack A             Rack A             Rack B                   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Spécificité Scaleway : VLANs par rack
 
-> ⚠️ **Important** : Sur Scaleway Elastic Metal, les serveurs sur un même Private Network peuvent avoir des **VLAN IDs différents**. Cela correspond à l'architecture physique du datacenter (racks différents).
+> Sur Scaleway Elastic Metal, les serveurs sur un même Private Network peuvent avoir des **VLAN IDs différents**. Cela correspond à l'architecture physique du datacenter (racks différents).
 >
 > Le déploiement gère automatiquement cette spécificité en attribuant les VLANs au niveau de chaque serveur (host_vars) et non globalement.
 
@@ -34,8 +34,8 @@ Déploiement automatisé d'un cluster hyperconvergé Proxmox + Ceph sur Scaleway
 
 ```bash
 # Outils requis
-brew install terraform    # ou apt install terraform
-pip install ansible jmespath netaddr
+brew install terraform ansible netaddr   # ou apt install terraform
+pip install jmespath 
 
 # Collections Ansible
 ansible-galaxy collection install community.general ansible.posix
