@@ -182,7 +182,7 @@ variable "enable_qdevice" {
 variable "qdevice_type" {
   description = "Instance type for QDevice"
   type        = string
-  default     = "PLAY2-NANO"
+  default     = "DEV1-S"
 }
 
 variable "qdevice_ip" {
@@ -212,14 +212,10 @@ variable "generate_env_file" {
 # =============================================================================
 
 variable "ssh_private_key_path" {
-  description = "Path to SSH private key for connecting to servers (after enabling SSH)"
+  description = "Path to SSH private key for Ansible connections (after manual SSH setup)"
   type        = string
   default     = "~/.ssh/id_rsa"
 }
-
-# =============================================================================
-# Public Gateway Configuration
-# =============================================================================
 
 variable "enable_public_gateway" {
   description = "Enable Public Gateway for VMs internet access and SSH bastion"
@@ -248,20 +244,4 @@ variable "bastion_port" {
   description = "SSH bastion port"
   type        = number
   default     = 61000
-}
-
-# =============================================================================
-# SSH Configuration
-# =============================================================================
-
-variable "ssh_public_key" {
-  description = "SSH public key content (for injection into servers). If empty, will be read from ssh_public_key_path."
-  type        = string
-  default     = ""
-}
-
-variable "ssh_public_key_path" {
-  description = "Path to SSH public key file"
-  type        = string
-  default     = "~/.ssh/id_rsa.pub"
 }

@@ -306,41 +306,44 @@ output "ceph_configuration" {
 }
 
 # =============================================================================
-# Public Gateway Outputs
+# Public Gateway Outputs (IPAM Mode)
 # =============================================================================
 
 output "public_gateway" {
-  description = "Public Gateway information"
+  description = "Public Gateway information (IPAM mode - DHCP managed by Private Network)"
   value = var.enable_public_gateway ? {
-    enabled      = true
-    name         = scaleway_vpc_public_gateway.main[0].name
-    id           = scaleway_vpc_public_gateway.main[0].id
-    public_ip    = scaleway_vpc_public_gateway_ip.gw_ip[0].address
-    type         = var.public_gateway_type
+    enabled   = true
+    name      = scaleway_vpc_public_gateway.main[0].name
+    id        = scaleway_vpc_public_gateway.main[0].id
+    public_ip = scaleway_vpc_public_gateway_ip.main[0].address
+    type      = var.public_gateway_type
     bastion = {
       enabled = var.enable_ssh_bastion
-      host    = scaleway_vpc_public_gateway_ip.gw_ip[0].address
+      host    = scaleway_vpc_public_gateway_ip.main[0].address
       port    = var.bastion_port
     }
-    dhcp_pool = {
-      low  = cidrhost(var.public_network_subnet, 100)
-      high = cidrhost(var.public_network_subnet, 250)
-    }
+    # Note: DHCP is managed by Scaleway IPAM on the Private Network
+    # VMs attached to the network will receive IPs from the subnet automatically
+    network_subnet = var.public_network_subnet
   } : {
-    enabled = false
+    enabled        = false
+    name           = null
+    id             = null
+    public_ip      = null
+    type           = null
+    bastion = {
+      enabled = false
+      host    = null
+      port    = null
+    }
+    network_subnet = null
   }
 }
 
 output "bastion_ssh_command" {
   description = "SSH command to connect via bastion to a VM"
   value = var.enable_public_gateway && var.enable_ssh_bastion ? {
-    example_vm     = "ssh -J bastion@${scaleway_vpc_public_gateway_ip.gw_ip[0].address}:${var.bastion_port} user@<VM_PRIVATE_IP>"
-    proxmox_node_1 = "ssh -J bastion@${scaleway_vpc_public_gateway_ip.gw_ip[0].address}:${var.bastion_port} root@${local.public_ips[0]}"
+    example_vm     = "ssh -J bastion@${scaleway_vpc_public_gateway_ip.main[0].address}:${var.bastion_port} user@<VM_PRIVATE_IP>"
+    proxmox_node_1 = "ssh -J bastion@${scaleway_vpc_public_gateway_ip.main[0].address}:${var.bastion_port} root@${local.public_ips[0]}"
   } : null
-}
-
-output "ssh_public_key" {
-  description = "SSH public key that will be injected into servers"
-  value       = local.ssh_public_key != "" ? substr(local.ssh_public_key, 0, 50) : "Not configured"
-  sensitive   = false
 }

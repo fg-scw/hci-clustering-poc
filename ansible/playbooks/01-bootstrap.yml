@@ -13,9 +13,9 @@
   
   tasks:
     # =========================================================================
-    # SSH Configuration
+    # SSH Configuration (ensure settings are correct)
     # =========================================================================
-    - name: Enable root SSH with key authentication
+    - name: Ensure root SSH with key authentication is enabled
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: "{{ item.regexp }}"
@@ -25,13 +25,6 @@
         - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin prohibit-password' }
         - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }
       notify: Restart SSH
-
-    - name: Inject SSH public key if provided
-      ansible.builtin.authorized_key:
-        user: root
-        key: "{{ ssh_public_key }}"
-        state: present
-      when: ssh_public_key is defined and ssh_public_key | length > 0
 
     # =========================================================================
     # /etc/hosts Configuration
@@ -121,6 +114,18 @@
       ansible.builtin.file:
         path: /etc/apt/sources.list.d/pve-enterprise.list
         state: absent
+
+    - name: Add pve-no-subscription repository
+      ansible.builtin.copy:
+        content: "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription\n"
+        dest: /etc/apt/sources.list.d/pve-no-subscription.list
+        mode: '0644'
+
+    - name: Ensure Ceph repository is configured
+      ansible.builtin.copy:
+        content: "deb http://download.proxmox.com/debian/ceph-reef bookworm no-subscription\n"
+        dest: /etc/apt/sources.list.d/ceph.list
+        mode: '0644'
 
     # =========================================================================
     # Apply Network Changes

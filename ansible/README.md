@@ -5,7 +5,6 @@ Configuration automatisée du cluster Proxmox + Ceph via Ansible.
 ## Prérequis
 
 ```bash
-brew install ansible netaddr
 pip install ansible jmespath netaddr
 ansible-galaxy install -r requirements.yml
 ```
@@ -40,3 +39,9 @@ ansible-playbook playbooks/01-bootstrap.yml
 ansible-playbook playbooks/02-cluster.yml
 ansible-playbook playbooks/03-ceph.yml
 ```
+
+## Notes
+
+- Utilise les commandes natives `pvecm` et `pveceph` (pas de rôles externes)
+- Compatible avec Ansible 2.15+
+- Idempotent : peut être relancé sans risque

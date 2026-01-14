@@ -1,15 +1,20 @@
 ################################################################################
 # Terraform Variables Example
+# Copy to terraform.tfvars and customize
 ################################################################################
 
 # =============================================================================
 # Required Variables
 # =============================================================================
 
-# SSH Key IDs - Get from: scw iam ssh-key list
+# SSH Key IDs from Scaleway IAM
+# Get with: scw iam ssh-key list
+# 
+# IMPORTANT: Cloud-init is NOT supported on Proxmox VE images for Elastic Metal.
+# After deployment, you must manually configure SSH on each node.
+# See README.md for the manual SSH configuration steps.
 ssh_key_ids = [
   "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-  # Add more keys if needed
 ]
 
 # Proxmox web UI password (root user)
@@ -37,7 +42,6 @@ tags = [
   "proxmox",
   "ceph",
   "hci",
-  "production",
   "terraform"
 ]
 
@@ -46,9 +50,11 @@ tags = [
 # =============================================================================
 
 # Available types with disk configurations:
-#   EM-L220E-NVME  - Lithium: 8C AMD EPYC, 64GB RAM, 4x1.92TB NVMe → 3 OSDs/node (9 total)
-#   EM-I120E-NVME  - Iridium: 8C/16T, 64GB RAM, 2x960GB NVMe     → 1 OSD/node (3 total)
-server_type = "EM-I120E-NVME"
+#   EM-L220E-NVME  - Lithium: 8C AMD EPYC, 64GB RAM, 4x1.92TB NVMe → 3 OSDs/node
+#   EM-I120E-NVME  - Iridium: 8C/16T, 64GB RAM, 2x960GB NVMe     → 1 OSD/node
+#   EM-A315X-SSD   - Aluminium: 8C, 64GB, 2x1TB SSD               → 1 OSD/node
+#   EM-A410X-SSD   - Aluminium: 16C, 128GB, 2x1TB SSD             → 1 OSD/node
+server_type = "EM-L220E-NVME"
 
 # Optional: Override OSD disks (auto-detected based on server_type if empty)
 # ceph_osd_disks = ["/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"]
@@ -75,15 +81,15 @@ cluster_network_subnet = "172.16.36.0/22"
 # Partitioning Configuration
 # =============================================================================
 
-# Enable custom partitioning: OS on nvme0n1, nvme1-3 free for Ceph OSDs
+# Enable custom partitioning: OS on nvme0n1, other disks free for Ceph OSDs
 enable_custom_partitioning = true
 
 # =============================================================================
 # QDevice Configuration
 # =============================================================================
 
-enable_qdevice = false
-qdevice_type   = "PLAY2-NANO  # Minimal instance for quorum
+enable_qdevice = true
+qdevice_type   = "DEV1-S"  # Minimal instance for quorum
 qdevice_ip     = "172.16.28.10"
 
 # =============================================================================
@@ -94,23 +100,17 @@ generate_inventory = true
 generate_env_file  = true
 
 # =============================================================================
-# SSH Configuration
+# SSH Configuration (for Ansible)
 # =============================================================================
 
-# Path to SSH private key (must match the public key in ssh_key_ids)
+# Path to SSH private key for Ansible connections
 ssh_private_key_path = "~/.ssh/id_rsa"
-
-# Path to SSH public key (for injection into servers via Ansible)
-ssh_public_key_path = "~/.ssh/id_rsa.pub"
-
-# Or specify the key content directly
-# ssh_public_key = "ssh-rsa AAAA..."
 
 # =============================================================================
 # Public Gateway Configuration
 # =============================================================================
 
-# Enable Public Gateway for VM internet access and SSH bastion
+# Enable Public Gateway for VM internet access
 enable_public_gateway = true
 
 # Gateway type: VPC-GW-S (up to 50 SMGW units) or VPC-GW-M (up to 500)
