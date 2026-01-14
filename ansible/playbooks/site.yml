@@ -1,0 +1,17 @@
+---
+# =============================================================================
+# Full Deployment Playbook
+# Run all playbooks in sequence
+# =============================================================================
+
+# 1. Configure network, /etc/hosts
+- name: Bootstrap Nodes
+  ansible.builtin.import_playbook: 01-bootstrap.yml
+
+# 2. Create Proxmox Cluster
+- name: Create Proxmox Cluster  
+  ansible.builtin.import_playbook: 02-cluster.yml
+
+# 3. Setup Ceph Storage
+- name: Setup Ceph Storage
+  ansible.builtin.import_playbook: 03-ceph.yml

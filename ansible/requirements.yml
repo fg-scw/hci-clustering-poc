@@ -1,0 +1,7 @@
+---
+# No external roles needed - using native pvecm/pveceph commands
+
+collections:
+  - name: community.general
+  - name: ansible.posix
+

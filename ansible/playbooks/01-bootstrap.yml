@@ -1,0 +1,175 @@
+---
+# =============================================================================
+# Bootstrap Playbook
+# Configure SSH, /etc/hosts, network interfaces on all nodes
+# =============================================================================
+
+# Phase 1: Configure all nodes (parallel)
+- name: Bootstrap Proxmox Nodes - Network Configuration
+  hosts: proxmox
+  become: true
+  gather_facts: true
+  # NO serial - configure all nodes in parallel
+  
+  tasks:
+    # =========================================================================
+    # SSH Configuration
+    # =========================================================================
+    - name: Enable root SSH with key authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+      loop:
+        - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin prohibit-password' }
+        - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }
+      notify: Restart SSH
+
+    - name: Inject SSH public key if provided
+      ansible.builtin.authorized_key:
+        user: root
+        key: "{{ ssh_public_key }}"
+        state: present
+      when: ssh_public_key is defined and ssh_public_key | length > 0
+
+    # =========================================================================
+    # /etc/hosts Configuration
+    # =========================================================================
+    - name: Configure /etc/hosts with all cluster nodes
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        block: |
+          # Proxmox Cluster Nodes (Private Network)
+          {% for host in groups['proxmox'] %}
+          {{ hostvars[host]['pve_cluster_addr0'] }} {{ host }}
+          {% endfor %}
+        marker: "# {mark} ANSIBLE MANAGED - PROXMOX CLUSTER"
+        create: true
+
+    # =========================================================================
+    # Network Configuration
+    # =========================================================================
+    - name: Detect physical interface from vmbr0
+      ansible.builtin.shell: |
+        # Try to get from bridge first
+        IFACE=$(ls /sys/class/net/vmbr0/brif/ 2>/dev/null | head -1)
+        if [ -z "$IFACE" ]; then
+          # Fallback: find first physical interface with carrier
+          IFACE=$(ip -o link show | grep -E "state UP" | grep -v -E "vmbr|lo|vlan|@" | awk -F': ' '{print $2}' | head -1)
+        fi
+        echo "$IFACE"
+      register: detected_interface
+      changed_when: false
+    
+    - name: Set primary interface fact
+      ansible.builtin.set_fact:
+        nic_primary: "{{ detected_interface.stdout | trim }}"
+    
+    - name: Display detected interface
+      ansible.builtin.debug:
+        msg: "Primary interface: {{ nic_primary }}"
+
+    - name: Check if VLAN interfaces already configured
+      ansible.builtin.shell: grep -q "vmbr1" /etc/network/interfaces && grep -q "vmbr2" /etc/network/interfaces
+      register: vlan_exists
+      changed_when: false
+      failed_when: false
+
+    - name: Configure network interfaces with VLANs
+      ansible.builtin.blockinfile:
+        path: /etc/network/interfaces
+        block: |
+          # VLAN interfaces for Scaleway Private Networks
+          auto {{ nic_primary }}.{{ public_vlan }}
+          iface {{ nic_primary }}.{{ public_vlan }} inet manual
+          
+          auto {{ nic_primary }}.{{ cluster_vlan }}
+          iface {{ nic_primary }}.{{ cluster_vlan }} inet manual
+          
+          # Public Network Bridge (Ceph MON, client traffic) - VLAN {{ public_vlan }}
+          auto vmbr1
+          iface vmbr1 inet static
+          	address {{ pve_cluster_addr0 }}/22
+          	bridge-ports {{ nic_primary }}.{{ public_vlan }}
+          	bridge-stp off
+          	bridge-fd 0
+          	bridge-vlan-aware yes
+          	bridge-vids 2-4094
+          	mtu 1500
+          #Public Network
+          
+          # Cluster Network Bridge (Ceph OSD replication) - VLAN {{ cluster_vlan }}
+          auto vmbr2
+          iface vmbr2 inet static
+          	address {{ pve_cluster_addr1 }}/22
+          	bridge-ports {{ nic_primary }}.{{ cluster_vlan }}
+          	bridge-stp off
+          	bridge-fd 0
+          	bridge-vlan-aware yes
+          	bridge-vids 2-4094
+          	mtu 1500
+          #Cluster Network
+        marker: "# {mark} ANSIBLE MANAGED - PRIVATE NETWORKS"
+      when: vlan_exists.rc != 0
+      register: network_configured
+
+    # =========================================================================
+    # APT Repository
+    # =========================================================================
+    - name: Remove enterprise repository if exists
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/pve-enterprise.list
+        state: absent
+
+    # =========================================================================
+    # Apply Network Changes
+    # =========================================================================
+    - name: Reload network configuration
+      ansible.builtin.shell: |
+        ifreload -a 2>/dev/null || systemctl restart networking
+      when: network_configured is changed
+      async: 45
+      poll: 5
+
+    - name: Wait for network to stabilize
+      ansible.builtin.pause:
+        seconds: 10
+      when: network_configured is changed
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+
+# =============================================================================
+# Phase 2: Verify Network Connectivity (after all nodes configured)
+# =============================================================================
+- name: Verify Network Connectivity
+  hosts: proxmox
+  become: true
+  gather_facts: false
+  
+  tasks:
+    - name: Verify vmbr1 is up
+      ansible.builtin.command: ip addr show vmbr1
+      register: vmbr1_status
+      changed_when: false
+      
+    - name: Display vmbr1 IP
+      ansible.builtin.debug:
+        msg: "{{ vmbr1_status.stdout_lines | select('search', 'inet ') | list }}"
+
+    - name: Test connectivity to all nodes on private network
+      ansible.builtin.command: "ping -c 2 -W 3 {{ hostvars[item]['pve_cluster_addr0'] }}"
+      loop: "{{ groups['proxmox'] }}"
+      register: ping_results
+      changed_when: false
+      retries: 3
+      delay: 5
+      until: ping_results.rc == 0
+
+    - name: Network verification passed
+      ansible.builtin.debug:
+        msg: "✅ Node {{ inventory_hostname }} can reach all cluster nodes on private network"

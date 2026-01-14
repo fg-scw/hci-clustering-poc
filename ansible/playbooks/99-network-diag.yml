@@ -1,0 +1,153 @@
+---
+# =============================================================================
+# Network Diagnostic Playbook
+# Run this to diagnose network connectivity issues
+# =============================================================================
+- name: Network Diagnostics
+  hosts: proxmox
+  become: true
+  gather_facts: true
+  
+  tasks:
+    - name: Get hostname
+      ansible.builtin.command: hostname
+      register: hostname_result
+      changed_when: false
+
+    - name: "=== Node: {{ hostname_result.stdout }} ==="
+      ansible.builtin.debug:
+        msg: "Diagnosing {{ inventory_hostname }} ({{ ansible_host }})"
+
+    # =========================================================================
+    # Interface Status
+    # =========================================================================
+    - name: List all network interfaces
+      ansible.builtin.shell: ip -br addr show
+      register: interfaces
+      changed_when: false
+
+    - name: Display interfaces
+      ansible.builtin.debug:
+        msg: "{{ interfaces.stdout_lines }}"
+
+    # =========================================================================
+    # Bridge Status
+    # =========================================================================
+    - name: Check vmbr0 (management)
+      ansible.builtin.shell: "ip addr show vmbr0 2>/dev/null || echo 'vmbr0 not found'"
+      register: vmbr0
+      changed_when: false
+
+    - name: Check vmbr1 (public network)
+      ansible.builtin.shell: "ip addr show vmbr1 2>/dev/null || echo 'vmbr1 not found'"
+      register: vmbr1
+      changed_when: false
+
+    - name: Check vmbr2 (cluster network)
+      ansible.builtin.shell: "ip addr show vmbr2 2>/dev/null || echo 'vmbr2 not found'"
+      register: vmbr2
+      changed_when: false
+
+    - name: Display bridge status
+      ansible.builtin.debug:
+        msg: |
+          --- vmbr0 (management) ---
+          {{ vmbr0.stdout }}
+          --- vmbr1 (public network) ---
+          {{ vmbr1.stdout }}
+          --- vmbr2 (cluster network) ---
+          {{ vmbr2.stdout }}
+
+    # =========================================================================
+    # VLAN Interfaces
+    # =========================================================================
+    - name: List VLAN interfaces
+      ansible.builtin.shell: "ip -d link show | grep -A1 'vlan protocol' || echo 'No VLAN interfaces'"
+      register: vlans
+      changed_when: false
+
+    - name: Display VLANs
+      ansible.builtin.debug:
+        msg: "{{ vlans.stdout_lines }}"
+
+    # =========================================================================
+    # Network Configuration File
+    # =========================================================================
+    - name: Show /etc/network/interfaces (private networks section)
+      ansible.builtin.shell: "grep -A50 'ANSIBLE MANAGED - PRIVATE' /etc/network/interfaces || echo 'No Ansible-managed section'"
+      register: netconfig
+      changed_when: false
+
+    - name: Display network config
+      ansible.builtin.debug:
+        msg: "{{ netconfig.stdout_lines }}"
+
+    # =========================================================================
+    # Expected vs Actual Configuration
+    # =========================================================================
+    - name: Expected configuration (per-host VLANs)
+      ansible.builtin.debug:
+        msg: |
+          Expected configuration for {{ inventory_hostname }}:
+          - pve_cluster_addr0 (vmbr1): {{ pve_cluster_addr0 }}
+          - pve_cluster_addr1 (vmbr2): {{ pve_cluster_addr1 }}
+          - public_vlan: {{ public_vlan }} (specific to this server's rack)
+          - cluster_vlan: {{ cluster_vlan }} (specific to this server's rack)
+          
+          NOTE: Scaleway EM assigns different VLAN IDs per physical rack.
+          Servers on the same Private Network may have different VLAN IDs.
+
+    # =========================================================================
+    # Connectivity Tests
+    # =========================================================================
+    - name: Test ping to all nodes (public network)
+      ansible.builtin.shell: "ping -c 1 -W 2 {{ hostvars[item]['pve_cluster_addr0'] }} && echo 'OK' || echo 'FAILED'"
+      loop: "{{ groups['proxmox'] }}"
+      register: ping_public
+      changed_when: false
+      failed_when: false
+
+    - name: Ping results (public network - vmbr1)
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} -> {{ item.item }}: {{ item.stdout_lines[-1] }}"
+      loop: "{{ ping_public.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Test ping to all nodes (cluster network)
+      ansible.builtin.shell: "ping -c 1 -W 2 {{ hostvars[item]['pve_cluster_addr1'] }} && echo 'OK' || echo 'FAILED'"
+      loop: "{{ groups['proxmox'] }}"
+      register: ping_cluster
+      changed_when: false
+      failed_when: false
+
+    - name: Ping results (cluster network - vmbr2)
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} -> {{ item.item }}: {{ item.stdout_lines[-1] }}"
+      loop: "{{ ping_cluster.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # =========================================================================
+    # ARP Table
+    # =========================================================================
+    - name: Show ARP table
+      ansible.builtin.command: ip neigh show
+      register: arp
+      changed_when: false
+
+    - name: Display ARP
+      ansible.builtin.debug:
+        msg: "{{ arp.stdout_lines }}"
+
+    # =========================================================================
+    # Routing Table
+    # =========================================================================
+    - name: Show routes
+      ansible.builtin.command: ip route show
+      register: routes
+      changed_when: false
+
+    - name: Display routes
+      ansible.builtin.debug:
+        msg: "{{ routes.stdout_lines }}"

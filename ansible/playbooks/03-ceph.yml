@@ -1,0 +1,252 @@
+---
+# =============================================================================
+# Ceph Storage Setup
+# Install and configure Ceph using native pveceph commands
+# =============================================================================
+- name: Install Ceph on Cluster
+  hosts: proxmox
+  become: true
+  gather_facts: true
+  
+  vars:
+    first_node: "{{ groups['proxmox'][0] }}"
+    ceph_release: "reef"  # Proxmox 8 default
+    
+  pre_tasks:
+    - name: Verify cluster is formed
+      ansible.builtin.command: pvecm status
+      register: cluster_status
+      changed_when: false
+      failed_when: "'Cluster information' not in cluster_status.stdout"
+
+  tasks:
+    # =========================================================================
+    # Install Ceph (first node initializes, others join)
+    # =========================================================================
+    - name: Check if Ceph is already installed
+      ansible.builtin.command: pveceph status
+      register: ceph_status
+      changed_when: false
+      failed_when: false
+
+    - name: Install Ceph packages on first node
+      ansible.builtin.shell: |
+        # Auto-accept apt prompts
+        export DEBIAN_FRONTEND=noninteractive
+        yes | pveceph install --repository no-subscription --version {{ ceph_release }}
+      args:
+        executable: /bin/bash
+      when:
+        - inventory_hostname == first_node
+        - ceph_status.rc != 0 or 'not initialized' in ceph_status.stderr | default('')
+      register: ceph_installed
+      async: 600
+      poll: 15
+
+    - name: Initialize Ceph on first node
+      ansible.builtin.command:
+        cmd: "pveceph init --network {{ public_network }} --cluster-network {{ cluster_network }}"
+      when:
+        - inventory_hostname == first_node
+        - ceph_installed is changed or 'not initialized' in ceph_status.stderr | default('')
+      register: ceph_initialized
+
+    - name: Wait for Ceph initialization
+      ansible.builtin.pause:
+        seconds: 10
+      when: ceph_initialized is changed
+
+    - name: Install Ceph packages on other nodes
+      ansible.builtin.shell: |
+        # Auto-accept apt prompts
+        export DEBIAN_FRONTEND=noninteractive
+        yes | pveceph install --repository no-subscription --version {{ ceph_release }}
+      args:
+        executable: /bin/bash
+      when:
+        - inventory_hostname != first_node
+        - ceph_status.rc != 0 or 'not initialized' in ceph_status.stderr | default('')
+      async: 600
+      poll: 15
+
+# =============================================================================
+# Create Monitors (MON)
+# =============================================================================
+- name: Create Ceph Monitors
+  hosts: proxmox
+  become: true
+  gather_facts: false
+  serial: 1
+  
+  tasks:
+    - name: Check if MON exists on this node
+      ansible.builtin.shell: |
+        ceph mon dump 2>/dev/null | grep -q "{{ inventory_hostname }}" && echo "exists" || echo "missing"
+      register: mon_status
+      changed_when: false
+      failed_when: false
+
+    - name: Create MON on this node
+      ansible.builtin.command:
+        cmd: "pveceph mon create"
+      when: mon_status.stdout == "missing"
+      register: mon_created
+
+    - name: Wait for MON to be ready
+      ansible.builtin.pause:
+        seconds: 5
+      when: mon_created is changed
+
+# =============================================================================
+# Create Managers (MGR)
+# =============================================================================
+- name: Create Ceph Managers
+  hosts: proxmox
+  become: true
+  gather_facts: false
+  serial: 1
+  
+  tasks:
+    - name: Check if MGR exists on this node
+      ansible.builtin.shell: |
+        ceph mgr dump 2>/dev/null | grep -q "{{ inventory_hostname }}" && echo "exists" || echo "missing"
+      register: mgr_status
+      changed_when: false
+      failed_when: false
+
+    - name: Create MGR on this node
+      ansible.builtin.command:
+        cmd: "pveceph mgr create"
+      when: mgr_status.stdout == "missing"
+      register: mgr_created
+
+    - name: Wait for MGR to be ready
+      ansible.builtin.pause:
+        seconds: 5
+      when: mgr_created is changed
+
+# =============================================================================
+# Create OSDs
+# =============================================================================
+- name: Create Ceph OSDs
+  hosts: proxmox
+  become: true
+  gather_facts: false
+  
+  tasks:
+    - name: Get existing OSDs
+      ansible.builtin.shell: |
+        ceph osd tree -f json 2>/dev/null | jq -r '.nodes[] | select(.type=="osd") | .name' || echo ""
+      register: existing_osds
+      changed_when: false
+
+    - name: Create OSDs for each device
+      ansible.builtin.command:
+        cmd: "pveceph osd create {{ item }}"
+      loop: "{{ ceph_osd_devices }}"
+      when: 
+        - ceph_osd_devices is defined
+        - item not in existing_osds.stdout
+      register: osd_created
+      ignore_errors: yes
+
+    - name: Display OSD creation results
+      ansible.builtin.debug:
+        msg: "Created OSDs on {{ inventory_hostname }}: {{ ceph_osd_devices }}"
+      when: osd_created is changed
+
+# =============================================================================
+# Create Pool and Storage
+# =============================================================================
+- name: Configure Ceph Pool
+  hosts: proxmox[0]
+  become: true
+  gather_facts: false
+  
+  vars:
+    pool_name: "{{ pve_ceph_pools[0].name | default('ceph-pool') }}"
+    pool_size: "{{ pve_ceph_pools[0].size | default(3) }}"
+    pool_min_size: "{{ pve_ceph_pools[0].min_size | default(2) }}"
+    pool_pgs: "{{ pve_ceph_pools[0].pgs | default(128) }}"
+    
+  tasks:
+    - name: Wait for OSDs to be up
+      ansible.builtin.shell: |
+        ceph osd stat -f json | python3 -c "import sys,json; print(json.load(sys.stdin).get('num_up_osds', 0))"
+      register: osds_up
+      until: osds_up.stdout | int >= 3
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: Check if pool exists
+      ansible.builtin.shell: |
+        ceph osd pool ls | grep -q "^{{ pool_name }}$" && echo "exists" || echo "missing"
+      register: pool_status
+      changed_when: false
+
+    - name: Create Ceph pool
+      ansible.builtin.command:
+        cmd: "pveceph pool create {{ pool_name }} --pg_num {{ pool_pgs }} --size {{ pool_size }} --min_size {{ pool_min_size }} --add_storages"
+      when: pool_status.stdout == "missing"
+      register: pool_created
+
+    - name: Enable RBD application on pool
+      ansible.builtin.command:
+        cmd: "ceph osd pool application enable {{ pool_name }} rbd"
+      when: pool_created is changed
+      ignore_errors: yes
+
+# =============================================================================
+# Final Verification
+# =============================================================================
+- name: Verify Ceph Cluster
+  hosts: proxmox[0]
+  become: true
+  gather_facts: false
+  
+  tasks:
+    - name: Get Ceph status
+      ansible.builtin.command:
+        cmd: ceph -s
+      register: ceph_status
+      changed_when: false
+
+    - name: Display Ceph status
+      ansible.builtin.debug:
+        msg: "{{ ceph_status.stdout_lines }}"
+
+    - name: Get OSD tree
+      ansible.builtin.command:
+        cmd: ceph osd tree
+      register: osd_tree
+      changed_when: false
+
+    - name: Display OSD tree
+      ansible.builtin.debug:
+        msg: "{{ osd_tree.stdout_lines }}"
+
+    - name: Get pool status
+      ansible.builtin.command:
+        cmd: ceph osd pool ls detail
+      register: pool_detail
+      changed_when: false
+
+    - name: Display pool status
+      ansible.builtin.debug:
+        msg: "{{ pool_detail.stdout_lines }}"
+
+    - name: Check Ceph health
+      ansible.builtin.command:
+        cmd: ceph health
+      register: ceph_health
+      changed_when: false
+
+    - name: Final status
+      ansible.builtin.debug:
+        msg: |
+          ====================================
+          Ceph Cluster Deployment Complete!
+          ====================================
+          Health: {{ ceph_health.stdout }}
+          ====================================

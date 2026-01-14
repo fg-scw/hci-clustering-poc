@@ -1,0 +1,294 @@
+---
+# =============================================================================
+# Proxmox Cluster Setup
+# Creates cluster using native pvecm commands
+# =============================================================================
+
+# Phase 1: Prepare all nodes
+- name: Prepare Cluster Nodes
+  hosts: proxmox
+  become: true
+  gather_facts: true
+  
+  vars:
+    cluster_name: "{{ pve_cluster_clustername | default('proxmox-cluster') }}"
+    first_node: "{{ groups['proxmox'][0] }}"
+    
+  tasks:
+    # =========================================================================
+    # NTP Configuration
+    # =========================================================================
+    - name: Install NTP
+      ansible.builtin.apt:
+        name: ntp
+        state: present
+        update_cache: yes
+
+    - name: Configure NTP servers
+      ansible.builtin.copy:
+        dest: /etc/ntp.conf
+        content: |
+          # NTP Configuration for Proxmox Cluster
+          driftfile /var/lib/ntp/ntp.drift
+          
+          # French NTP servers
+          server 0.fr.pool.ntp.org iburst
+          server 1.fr.pool.ntp.org iburst
+          server 2.fr.pool.ntp.org iburst
+          server 3.fr.pool.ntp.org iburst
+          
+          # Access control
+          restrict default kod nomodify notrap nopeer noquery
+          restrict 127.0.0.1
+          restrict ::1
+        mode: '0644'
+      notify: Restart NTP
+
+    # =========================================================================
+    # SSH Key Exchange (for cluster communication)
+    # =========================================================================
+    - name: Ensure SSH directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: '0700'
+
+    - name: Generate SSH key if not exists
+      ansible.builtin.command:
+        cmd: ssh-keygen -t rsa -b 4096 -f /root/.ssh/id_rsa -N ''
+        creates: /root/.ssh/id_rsa
+
+    - name: Get SSH public key content
+      ansible.builtin.slurp:
+        src: /root/.ssh/id_rsa.pub
+      register: ssh_pub_key
+
+    - name: Store public key as fact
+      ansible.builtin.set_fact:
+        node_ssh_pubkey: "{{ ssh_pub_key['content'] | b64decode | trim }}"
+
+    # =========================================================================
+    # Distribute SSH Keys (executed on each node)
+    # =========================================================================
+    - name: Add all nodes' SSH keys to authorized_keys
+      ansible.builtin.authorized_key:
+        user: root
+        key: "{{ hostvars[item]['node_ssh_pubkey'] }}"
+        state: present
+      loop: "{{ groups['proxmox'] }}"
+      when: hostvars[item]['node_ssh_pubkey'] is defined
+
+    # =========================================================================
+    # Configure known_hosts (executed ON the nodes, not locally)
+    # =========================================================================
+    - name: Remove old SSH host keys
+      ansible.builtin.shell: |
+        ssh-keygen -R "{{ item }}" 2>/dev/null || true
+        ssh-keygen -R "{{ hostvars[item]['pve_cluster_addr0'] }}" 2>/dev/null || true
+      loop: "{{ groups['proxmox'] }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Scan and add SSH host keys by hostname
+      ansible.builtin.shell: |
+        ssh-keyscan -H "{{ item }}" >> /root/.ssh/known_hosts 2>/dev/null || true
+      loop: "{{ groups['proxmox'] }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Scan and add SSH host keys by IP
+      ansible.builtin.shell: |
+        ssh-keyscan -H "{{ hostvars[item]['pve_cluster_addr0'] }}" >> /root/.ssh/known_hosts 2>/dev/null || true
+      loop: "{{ groups['proxmox'] }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove duplicate entries from known_hosts
+      ansible.builtin.shell: sort -u /root/.ssh/known_hosts -o /root/.ssh/known_hosts
+      changed_when: false
+
+    - name: Test SSH connectivity to all nodes
+      ansible.builtin.command: "ssh -o BatchMode=yes -o ConnectTimeout=5 {{ item }} hostname"
+      loop: "{{ groups['proxmox'] }}"
+      register: ssh_test
+      changed_when: false
+      failed_when: false
+
+    - name: Display SSH connectivity results
+      ansible.builtin.debug:
+        msg: "SSH to {{ item.item }}: {{ 'OK' if item.rc == 0 else 'FAILED' }}"
+      loop: "{{ ssh_test.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+  handlers:
+    - name: Restart NTP
+      ansible.builtin.service:
+        name: ntp
+        state: restarted
+
+# =============================================================================
+# Phase 2: Create Cluster (first node only)
+# =============================================================================
+- name: Create Proxmox Cluster
+  hosts: proxmox[0]
+  become: true
+  gather_facts: false
+  
+  vars:
+    cluster_name: "{{ pve_cluster_clustername | default('proxmox-cluster') }}"
+    
+  tasks:
+    - name: Check if cluster already exists
+      ansible.builtin.command: pvecm status
+      register: cluster_status
+      changed_when: false
+      failed_when: false
+
+    - name: Create cluster
+      ansible.builtin.command:
+        cmd: "pvecm create {{ cluster_name }} --link0 {{ pve_cluster_addr0 }} --link1 {{ pve_cluster_addr1 }}"
+      when: cluster_status.rc != 0
+      register: cluster_created
+
+    - name: Wait for cluster to initialize
+      ansible.builtin.pause:
+        seconds: 15
+      when: cluster_created is changed
+
+    - name: Verify cluster is ready
+      ansible.builtin.command: pvecm status
+      register: cluster_ready
+      changed_when: false
+      retries: 5
+      delay: 5
+      until: cluster_ready.rc == 0
+
+    - name: Display cluster status
+      ansible.builtin.debug:
+        msg: "{{ cluster_ready.stdout_lines }}"
+
+# =============================================================================
+# Phase 3: Join Other Nodes (one at a time)
+# =============================================================================
+- name: Join Nodes to Cluster
+  hosts: proxmox[1:]
+  become: true
+  gather_facts: false
+  serial: 1
+  
+  vars:
+    first_node: "{{ groups['proxmox'][0] }}"
+    first_node_ip: "{{ hostvars[groups['proxmox'][0]]['pve_cluster_addr0'] }}"
+    root_password: "{{ service_password | default(lookup('env', 'PROXMOX_PASSWORD')) }}"
+    
+  tasks:
+    - name: Check if already in cluster
+      ansible.builtin.command: pvecm status
+      register: cluster_status
+      changed_when: false
+      failed_when: false
+
+    - name: Install expect for interactive password handling
+      ansible.builtin.apt:
+        name: expect
+        state: present
+      when: cluster_status.rc != 0
+
+    - name: Join cluster using expect
+      ansible.builtin.shell: |
+        /usr/bin/expect <<'EXPECT_SCRIPT'
+        set timeout 120
+        spawn pvecm add {{ first_node }} --link0 {{ pve_cluster_addr0 }} --link1 {{ pve_cluster_addr1 }}
+        expect {
+          "Please enter superuser (root) password for*" {
+            send "{{ root_password }}\r"
+            exp_continue
+          }
+          "password:" {
+            send "{{ root_password }}\r"
+            exp_continue
+          }
+          "Are you sure you want to continue connecting*" {
+            send "yes\r"
+            exp_continue
+          }
+          "fingerprint*" {
+            send "yes\r"
+            exp_continue
+          }
+          eof
+        }
+        catch wait result
+        exit [lindex $result 3]
+        EXPECT_SCRIPT
+      args:
+        executable: /bin/bash
+      when: 
+        - cluster_status.rc != 0
+        - root_password is defined and root_password != ''
+      register: join_result
+      no_log: true  # Hide password from logs
+
+    - name: Wait for node to sync with cluster
+      ansible.builtin.pause:
+        seconds: 30
+      when: join_result is changed
+
+    - name: Verify node joined cluster
+      ansible.builtin.command: pvecm status
+      register: join_verify
+      changed_when: false
+      retries: 6
+      delay: 10
+      until: join_verify.rc == 0
+
+    - name: Display join status
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} joined cluster successfully"
+      when: join_verify.rc == 0
+
+# =============================================================================
+# Phase 4: Verify Cluster Formation
+# =============================================================================
+- name: Verify Cluster Formation
+  hosts: proxmox[0]
+  become: true
+  gather_facts: false
+  
+  tasks:
+    - name: Wait for all nodes to be visible
+      ansible.builtin.shell: |
+        pvecm nodes | grep -c "proxmox-hci-pve"
+      register: node_count
+      until: node_count.stdout | int >= groups['proxmox'] | length
+      retries: 12
+      delay: 10
+      changed_when: false
+
+    - name: Get final cluster status
+      ansible.builtin.command: pvecm status
+      register: final_status
+      changed_when: false
+
+    - name: Display cluster status
+      ansible.builtin.debug:
+        msg: "{{ final_status.stdout_lines }}"
+
+    - name: Get cluster nodes
+      ansible.builtin.command: pvecm nodes
+      register: nodes_status
+      changed_when: false
+
+    - name: Display cluster nodes
+      ansible.builtin.debug:
+        msg: "{{ nodes_status.stdout_lines }}"
+
+    - name: Cluster formation complete
+      ansible.builtin.debug:
+        msg: |
+          ====================================
+          ✅ Proxmox Cluster Formation Complete!
+          ====================================
+          Nodes: {{ groups['proxmox'] | length }}
+          ====================================
